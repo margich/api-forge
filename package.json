@@ -13,18 +13,29 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:reset": "prisma migrate reset",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^2.0.3",
+    "@prisma/client": "^6.13.0",
+    "ai": "^5.0.4",
     "next": "15.4.5",
+    "openai": "^4.73.1",
+    "prisma": "^6.13.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "uuid": "^11.1.0",
-    "zod": "^4.0.14"
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "@testcontainers/postgresql": "^11.5.0",
     "@testing-library/jest-dom": "^6.6.4",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^14.6.1",
@@ -42,6 +53,7 @@
     "jsdom": "^26.1.0",
     "prettier": "^3.6.2",
     "tailwindcss": "^4",
+    "testcontainers": "^11.5.0",
     "typescript": "^5",
     "vitest": "^3.2.4"
   }

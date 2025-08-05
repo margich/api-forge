@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// User projects table
+model Project {
+  id          String   @id @default(uuid())
+  name        String   @db.VarChar(100)
+  description String?
+  framework   String   @db.VarChar(50)
+  database    String   @db.VarChar(50)
+  authType    String   @db.VarChar(50)
+  language    String   @db.VarChar(50)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  models      Model[]
+  generatedCode GeneratedCode[]
+
+  @@map("projects")
+}
+
+// Models table
+model Model {
+  id          String   @id @default(uuid())
+  name        String   @db.VarChar(100)
+  tableName   String?  @db.VarChar(100)
+  timestamps  Boolean  @default(true)
+  softDelete  Boolean  @default(false)
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Foreign keys
+  projectId   String
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  // Relations
+  fields        Field[]
+  sourceRelationships Relationship[] @relation("SourceModel")
+  targetRelationships Relationship[] @relation("TargetModel")
+
+  @@map("models")
+}
+
+// Fields table
+model Field {
+  id           String   @id @default(uuid())
+  name         String   @db.VarChar(100)
+  type         String   @db.VarChar(50)
+  required     Boolean  @default(false)
+  unique       Boolean  @default(false)
+  defaultValue String?
+  validation   Json?    // Store validation rules as JSON
+  description  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Foreign keys
+  modelId      String
+  model        Model @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@map("fields")
+}
+
+// Relationships table
+model Relationship {
+  id            String   @id @default(uuid())
+  type          String   @db.VarChar(50) // oneToOne, oneToMany, manyToMany
+  sourceField   String   @db.VarChar(100)
+  targetField   String   @db.VarChar(100)
+  cascadeDelete Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Foreign keys
+  sourceModelId String
+  targetModelId String
+  sourceModel   Model @relation("SourceModel", fields: [sourceModelId], references: [id], onDelete: Cascade)
+  targetModel   Model @relation("TargetModel", fields: [targetModelId], references: [id], onDelete: Cascade)
+
+  @@map("relationships")
+}
+
+// Generated code metadata table
+model GeneratedCode {
+  id          String   @id @default(uuid())
+  type        String   @db.VarChar(50) // model, controller, route, etc.
+  filename    String   @db.VarChar(255)
+  content     String   // Store generated code content
+  hash        String   @db.VarChar(64) // Hash of content for change detection
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Foreign keys
+  projectId   String
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("generated_code")
+}

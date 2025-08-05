@@ -13,14 +13,14 @@
   - Write unit tests for data model validation and utility functions
   - _Requirements: 2.1, 2.2, 2.3, 7.4_
 
-- [ ] 3. Create database layer and model persistence
+- [x] 3. Create database layer and model persistence
   - Set up database connection and configuration (PostgreSQL with Prisma or similar ORM)
   - Create database schema for storing user projects, models, and generated code metadata
   - Implement repository pattern for model CRUD operations
   - Write integration tests for database operations
   - _Requirements: 2.2, 2.5_
 
-- [ ] 4. Build prompt parsing and NLP service
+- [x] 4. Build prompt parsing and NLP service
   - Implement natural language processing service to extract models from user prompts
   - Create prompt analysis functions that identify entities, relationships, and field types
   - Build suggestion engine for ambiguous or incomplete prompts
