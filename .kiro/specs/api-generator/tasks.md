@@ -57,7 +57,7 @@
   - Write unit tests for code generation with various model configurations
   - _Requirements: 3.1, 3.2, 3.3, 3.4, 7.1, 7.2, 7.5_
 
-- [ ] 9. Add authentication and authorization generation
+- [x] 9. Add authentication and authorization generation
   - Implement JWT authentication code generation with login/register endpoints
   - Create middleware generation for protected routes and role-based access
   - Build user model and authentication schema generation

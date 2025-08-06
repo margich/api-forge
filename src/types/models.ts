@@ -68,6 +68,8 @@ export const ModelMetadataSchema = z.object({
   timestamps: z.boolean().default(true),
   softDelete: z.boolean().default(false),
   description: z.string().optional(),
+  requiresAuth: z.boolean().default(true),
+  allowedRoles: z.array(z.string()).default([]),
 });
 
 export const ModelSchema = z.object({

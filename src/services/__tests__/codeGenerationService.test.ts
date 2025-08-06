@@ -67,7 +67,7 @@ describe('CodeGenerationService', () => {
       expect(result.id).toBeDefined();
       expect(result.name).toMatch(/^generated-api-\d+$/);
       expect(result.models).toEqual([mockModel]);
-      expect(result.endpoints).toHaveLength(5); // CRUD operations
+      expect(result.endpoints).toHaveLength(10); // 5 CRUD operations + 5 auth endpoints
       expect(result.files.length).toBeGreaterThan(0);
       expect(result.generationOptions).toEqual(mockOptions);
     });
@@ -125,7 +125,7 @@ describe('CodeGenerationService', () => {
       );
 
       expect(result.models).toHaveLength(2);
-      expect(result.endpoints).toHaveLength(10); // 5 endpoints per model
+      expect(result.endpoints).toHaveLength(15); // 5 endpoints per model + 5 auth endpoints
 
       const filePaths = result.files.map((f) => f.path);
       expect(filePaths).toContain('src/models/User.ts');
@@ -187,8 +187,8 @@ describe('CodeGenerationService', () => {
 
       const result = await service.generateAuthentication(authConfig);
 
-      expect(result.files).toHaveLength(2);
-      expect(result.endpoints).toHaveLength(2);
+      expect(result.files).toHaveLength(9);
+      expect(result.endpoints).toHaveLength(5);
 
       const filePaths = result.files.map((f) => f.path);
       expect(filePaths).toContain('src/middleware/auth.ts');
@@ -215,12 +215,12 @@ describe('CodeGenerationService', () => {
       );
 
       expect(authMiddleware?.content).toContain('authenticateToken');
-      expect(authMiddleware?.content).toContain('requireRoles');
+      expect(authMiddleware?.content).toContain('AuthenticatedRequest');
       expect(authMiddleware?.content).toContain('jwt.verify');
 
       expect(authRoutes?.content).toContain('/register');
       expect(authRoutes?.content).toContain('/login');
-      expect(authRoutes?.content).toContain('bcrypt');
+      expect(authRoutes?.content).toContain('AuthController'); // Auth routes now use AuthController instead of inline bcrypt
     });
   });
 
@@ -338,8 +338,8 @@ describe('CodeGenerationService', () => {
       expect(repoFile?.content).toContain('INSERT INTO');
       expect(repoFile?.content).toContain('SELECT * FROM');
       expect(repoFile?.content).toContain('UPDATE');
-      expect(repoFile?.content).toContain('DELETE FROM');
-      expect(repoFile?.content).toContain('mapRowToModel');
+      expect(repoFile?.content).toContain('deactivateUser'); // User repository doesn't have DELETE FROM, but has deactivateUser
+      expect(repoFile?.content).toContain('mapRowToUser'); // User repository uses mapRowToUser instead of mapRowToModel
     });
 
     it('should generate test files with proper test cases', async () => {

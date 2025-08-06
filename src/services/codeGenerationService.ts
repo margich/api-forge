@@ -55,9 +55,28 @@ export class CodeGenerationService {
     const modelFiles = await this.generateModels(models, options);
     files.push(...modelFiles);
 
+    // Generate authentication if enabled
+    let authConfig: AuthConfig = {
+      type: options.authentication,
+      roles: [
+        { name: 'admin', permissions: ['create', 'read', 'update', 'delete'] },
+        { name: 'user', permissions: ['read'] },
+      ],
+      protectedRoutes: [],
+    };
+
+    if (options.authentication === 'jwt') {
+      const authModule = await this.generateAuthentication(authConfig);
+      files.push(...authModule.files);
+      endpoints.push(...authModule.endpoints);
+    }
+
     // Generate CRUD operations for each model
     for (const model of models) {
-      const crudEndpoints = await this.generateCRUDOperations(model);
+      const crudEndpoints = await this.generateCRUDOperations(
+        model,
+        authConfig
+      );
       endpoints.push(
         crudEndpoints.create,
         crudEndpoints.read,
@@ -68,19 +87,6 @@ export class CodeGenerationService {
 
       const crudFiles = await this.generateCRUDFiles(model, options);
       files.push(...crudFiles);
-    }
-
-    // Generate authentication if enabled
-    let authConfig: AuthConfig = {
-      type: options.authentication,
-      roles: [],
-      protectedRoutes: [],
-    };
-
-    if (options.authentication !== 'jwt') {
-      const authModule = await this.generateAuthentication(authConfig);
-      files.push(...authModule.files);
-      endpoints.push(...authModule.endpoints);
     }
 
     // Generate middleware
@@ -126,9 +132,16 @@ export class CodeGenerationService {
   /**
    * Generate CRUD operations for a specific model
    */
-  async generateCRUDOperations(model: Model): Promise<CRUDEndpoints> {
+  async generateCRUDOperations(
+    model: Model,
+    authConfig?: AuthConfig
+  ): Promise<CRUDEndpoints> {
     const modelName = model.name.toLowerCase();
     const ModelName = model.name;
+
+    // Determine if endpoints should be protected based on model metadata or default behavior
+    const shouldProtect = model.metadata.requiresAuth !== false; // Default to true unless explicitly set to false
+    const defaultRoles = authConfig?.roles.map((r) => r.name) || [];
 
     return {
       create: {
@@ -137,8 +150,8 @@ export class CodeGenerationService {
         method: 'POST',
         modelName: ModelName,
         operation: 'create',
-        authenticated: false,
-        roles: [],
+        authenticated: shouldProtect,
+        roles: shouldProtect ? defaultRoles : [],
         description: `Create a new ${ModelName}`,
       },
       read: {
@@ -147,7 +160,7 @@ export class CodeGenerationService {
         method: 'GET',
         modelName: ModelName,
         operation: 'read',
-        authenticated: false,
+        authenticated: false, // Read operations are typically public
         roles: [],
         description: `Get a ${ModelName} by ID`,
       },
@@ -157,8 +170,8 @@ export class CodeGenerationService {
         method: 'PUT',
         modelName: ModelName,
         operation: 'update',
-        authenticated: false,
-        roles: [],
+        authenticated: shouldProtect,
+        roles: shouldProtect ? defaultRoles : [],
         description: `Update a ${ModelName} by ID`,
       },
       delete: {
@@ -167,8 +180,8 @@ export class CodeGenerationService {
         method: 'DELETE',
         modelName: ModelName,
         operation: 'delete',
-        authenticated: false,
-        roles: [],
+        authenticated: shouldProtect,
+        roles: shouldProtect ? ['admin'] : [], // Delete typically requires admin role
         description: `Delete a ${ModelName} by ID`,
       },
       list: {
@@ -177,7 +190,7 @@ export class CodeGenerationService {
         method: 'GET',
         modelName: ModelName,
         operation: 'list',
-        authenticated: false,
+        authenticated: false, // List operations are typically public
         roles: [],
         description: `List all ${ModelName}s`,
       },
@@ -191,10 +204,43 @@ export class CodeGenerationService {
     const files: GeneratedFile[] = [];
     const endpoints: Endpoint[] = [];
 
+    // Generate User model for authentication
+    const userModel = this.generateUserModel(authConfig);
+    files.push({
+      path: 'src/models/User.ts',
+      content: userModel,
+      type: 'source',
+      language: 'typescript',
+    });
+
+    // Generate authentication service
+    files.push({
+      path: 'src/services/AuthService.ts',
+      content: this.generateAuthService(authConfig),
+      type: 'source',
+      language: 'typescript',
+    });
+
+    // Generate auth controller
+    files.push({
+      path: 'src/controllers/AuthController.ts',
+      content: this.generateAuthController(authConfig),
+      type: 'source',
+      language: 'typescript',
+    });
+
     // Generate auth middleware
     files.push({
       path: 'src/middleware/auth.ts',
       content: this.generateAuthMiddleware(authConfig),
+      type: 'source',
+      language: 'typescript',
+    });
+
+    // Generate role-based authorization middleware
+    files.push({
+      path: 'src/middleware/authorize.ts',
+      content: this.generateAuthorizationMiddleware(authConfig),
       type: 'source',
       language: 'typescript',
     });
@@ -207,8 +253,42 @@ export class CodeGenerationService {
       language: 'typescript',
     });
 
+    // Generate User repository
+    files.push({
+      path: 'src/repositories/UserRepository.ts',
+      content: this.generateUserRepository(authConfig),
+      type: 'source',
+      language: 'typescript',
+    });
+
+    // Generate authentication validation schemas
+    files.push({
+      path: 'src/validation/AuthValidation.ts',
+      content: this.generateAuthValidation(authConfig),
+      type: 'source',
+      language: 'typescript',
+    });
+
+    // Generate database schema for User table
+    files.push({
+      path: 'src/schemas/user.sql',
+      content: this.generateUserSchema(authConfig),
+      type: 'source',
+      language: 'sql',
+    });
+
     // Generate auth endpoints
     endpoints.push(
+      {
+        id: uuidv4(),
+        path: '/auth/register',
+        method: 'POST',
+        modelName: 'Auth',
+        operation: 'create',
+        authenticated: false,
+        roles: [],
+        description: 'User registration',
+      },
       {
         id: uuidv4(),
         path: '/auth/login',
@@ -221,13 +301,33 @@ export class CodeGenerationService {
       },
       {
         id: uuidv4(),
-        path: '/auth/register',
+        path: '/auth/refresh',
         method: 'POST',
         modelName: 'Auth',
         operation: 'create',
         authenticated: false,
         roles: [],
-        description: 'User registration',
+        description: 'Refresh access token',
+      },
+      {
+        id: uuidv4(),
+        path: '/auth/logout',
+        method: 'POST',
+        modelName: 'Auth',
+        operation: 'delete',
+        authenticated: true,
+        roles: [],
+        description: 'User logout',
+      },
+      {
+        id: uuidv4(),
+        path: '/auth/profile',
+        method: 'GET',
+        modelName: 'Auth',
+        operation: 'read',
+        authenticated: true,
+        roles: [],
+        description: 'Get user profile',
       }
     );
 
@@ -552,8 +652,9 @@ NODE_ENV=development
     if (options.authentication === 'jwt') {
       content += `
 # Authentication Configuration
-JWT_SECRET=your-super-secret-jwt-key
-JWT_EXPIRES_IN=24h
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+JWT_REFRESH_SECRET=your-super-secret-refresh-key-change-this-in-production
+JWT_EXPIRES_IN=15m
 `;
     }
 
@@ -983,16 +1084,33 @@ export class ${modelName}Repository {}
     const modelName = model.name;
     const controllerName = `${modelName}Controller`;
     const routePath = model.name.toLowerCase();
+    const requiresAuth = model.metadata.requiresAuth !== false;
+    const allowedRoles = model.metadata.allowedRoles || [];
+
+    const authImports =
+      options.authentication === 'jwt'
+        ? `
+import { authenticateToken } from '../middleware/auth';
+import { authorize } from '../middleware/authorize';`
+        : '';
+
+    const authMiddleware = (authenticated: boolean, roles: string[] = []) => {
+      if (!authenticated || options.authentication !== 'jwt') return '';
+      if (roles.length > 0) {
+        return `authenticateToken, authorize(${roles.map((r) => `'${r}'`).join(', ')}), `;
+      }
+      return 'authenticateToken, ';
+    };
 
     return `import { Router } from 'express';
 import { ${controllerName} } from '../controllers/${controllerName}';
-import { validate${modelName} } from '../validation/${modelName}Validation';
+import { validate${modelName} } from '../validation/${modelName}Validation';${authImports}
 
 const router = Router();
 const ${modelName.toLowerCase()}Controller = new ${controllerName}();
 
 // Create ${modelName}
-router.post('/', validate${modelName}.create, ${modelName.toLowerCase()}Controller.create);
+router.post('/', ${authMiddleware(requiresAuth, allowedRoles)}validate${modelName}.create, ${modelName.toLowerCase()}Controller.create);
 
 // Get all ${modelName}s
 router.get('/', ${modelName.toLowerCase()}Controller.getAll);
@@ -1001,10 +1119,10 @@ router.get('/', ${modelName.toLowerCase()}Controller.getAll);
 router.get('/:id', ${modelName.toLowerCase()}Controller.getById);
 
 // Update ${modelName}
-router.put('/:id', validate${modelName}.update, ${modelName.toLowerCase()}Controller.update);
+router.put('/:id', ${authMiddleware(requiresAuth, allowedRoles)}validate${modelName}.update, ${modelName.toLowerCase()}Controller.update);
 
 // Delete ${modelName}
-router.delete('/:id', ${modelName.toLowerCase()}Controller.delete);
+router.delete('/:id', ${authMiddleware(requiresAuth, ['admin'])}${modelName.toLowerCase()}Controller.delete);
 
 export default router;
 `;
@@ -1194,6 +1312,11 @@ ${model.fields
       )
       .join('\n');
 
+    const authImport =
+      options.authentication === 'jwt'
+        ? `import authRoutes from './routes/auth';`
+        : '';
+
     const routes = models
       .map(
         (model) =>
@@ -1201,9 +1324,12 @@ ${model.fields
       )
       .join('\n');
 
+    const authRoute =
+      options.authentication === 'jwt' ? `app.use('/auth', authRoutes);` : '';
+
     return `import express from 'express';
 import cors from 'cors';
-${imports}
+${imports}${authImport}
 import { errorHandler } from './middleware/errorHandler';
 import { loggingMiddleware } from './middleware/logging';
 
@@ -1221,7 +1347,10 @@ app.get('/health', (req, res) => {
   res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Routes
+// Authentication routes
+${authRoute}
+
+// API Routes
 ${routes}
 
 // Error handling
@@ -1242,195 +1371,6 @@ if (process.env.NODE_ENV !== 'test') {
 }
 
 export default app;
-`;
-  }
-
-  // Middleware generation methods
-
-  private generateAuthMiddleware(authConfig: AuthConfig): string {
-    return `import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-
-export interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    roles: string[];
-  };
-}
-
-export const authenticateToken = (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({
-      success: false,
-      message: 'Access token required'
-    });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET!, (err, user) => {
-    if (err) {
-      return res.status(403).json({
-        success: false,
-        message: 'Invalid or expired token'
-      });
-    }
-
-    req.user = user as any;
-    next();
-  });
-};
-
-export const requireRoles = (roles: string[]) => {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-    if (!req.user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Authentication required'
-      });
-    }
-
-    const hasRequiredRole = roles.some(role => req.user!.roles.includes(role));
-    
-    if (!hasRequiredRole) {
-      return res.status(403).json({
-        success: false,
-        message: 'Insufficient permissions'
-      });
-    }
-
-    next();
-  };
-};
-`;
-  }
-
-  private generateAuthRoutes(authConfig: AuthConfig): string {
-    return `import { Router, Request, Response } from 'express';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import { body, validationResult } from 'express-validator';
-
-const router = Router();
-
-// Register endpoint
-router.post('/register', [
-  body('email').isEmail().normalizeEmail(),
-  body('password').isLength({ min: 6 }),
-  body('name').isString().trim().isLength({ min: 1 })
-], async (req: Request, res: Response) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
-    const { email, password, name } = req.body;
-
-    // Hash password
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    // TODO: Save user to database
-    // const user = await userService.create({ email, password: hashedPassword, name });
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: 'user-id', email, roles: ['user'] },
-      process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
-    );
-
-    res.status(201).json({
-      success: true,
-      data: {
-        token,
-        user: {
-          id: 'user-id',
-          email,
-          name
-        }
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Registration failed'
-    });
-  }
-});
-
-// Login endpoint
-router.post('/login', [
-  body('email').isEmail().normalizeEmail(),
-  body('password').isString()
-], async (req: Request, res: Response) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
-    const { email, password } = req.body;
-
-    // TODO: Get user from database
-    // const user = await userService.findByEmail(email);
-    
-    // For demo purposes, using mock data
-    const mockUser = {
-      id: 'user-id',
-      email,
-      password: await bcrypt.hash('password123', 10), // Mock hashed password
-      name: 'Demo User'
-    };
-
-    // Verify password
-    const isValidPassword = await bcrypt.compare(password, mockUser.password);
-    
-    if (!isValidPassword) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
-    }
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { id: mockUser.id, email: mockUser.email, roles: ['user'] },
-      process.env.JWT_SECRET!,
-      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
-    );
-
-    res.json({
-      success: true,
-      data: {
-        token,
-        user: {
-          id: mockUser.id,
-          email: mockUser.email,
-          name: mockUser.name
-        }
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Login failed'
-    });
-  }
-});
-
-export default router;
 `;
   }
 
@@ -1510,6 +1450,678 @@ export const errorHandler = (error: Error, req: Request, res: Response, next: Ne
     ...(process.env.NODE_ENV !== 'production' && { stack: error.stack })
   });
 };
+`;
+  }
+
+  // Authentication generation methods
+
+  private generateUserModel(authConfig: AuthConfig): string {
+    const roles = authConfig.roles.map((role) => `'${role.name}'`).join(' | ');
+    const roleType = roles || 'string';
+
+    return `export interface User {
+  id: string;
+  email: string;
+  password: string;
+  name: string;
+  role: ${roleType};
+  isActive: boolean;
+  emailVerified: boolean;
+  lastLoginAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface CreateUserRequest {
+  email: string;
+  password: string;
+  name: string;
+  role?: ${roleType};
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  token: string;
+  refreshToken: string;
+  user: {
+    id: string;
+    email: string;
+    name: string;
+    role: ${roleType};
+  };
+}
+
+export interface RefreshTokenRequest {
+  refreshToken: string;
+}
+
+export interface UserProfile {
+  id: string;
+  email: string;
+  name: string;
+  role: ${roleType};
+  isActive: boolean;
+  emailVerified: boolean;
+  lastLoginAt?: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+`;
+  }
+
+  private generateAuthService(authConfig: AuthConfig): string {
+    const jwtImports =
+      authConfig.type === 'jwt'
+        ? `import jwt from 'jsonwebtoken';
+import bcrypt from 'bcryptjs';`
+        : '';
+
+    return `${jwtImports}
+import { UserRepository } from '../repositories/UserRepository';
+import { User, CreateUserRequest, LoginRequest, LoginResponse, UserProfile } from '../models/User';
+
+export class AuthService {
+  private userRepository: UserRepository;
+
+  constructor() {
+    this.userRepository = new UserRepository();
+  }
+
+  async register(userData: CreateUserRequest): Promise<LoginResponse> {
+    // Check if user already exists
+    const existingUser = await this.userRepository.findByEmail(userData.email);
+    if (existingUser) {
+      throw new Error('User already exists with this email');
+    }
+
+    // Hash password
+    const hashedPassword = await bcrypt.hash(userData.password, 12);
+
+    // Create user
+    const user = await this.userRepository.create({
+      ...userData,
+      password: hashedPassword,
+      role: userData.role || '${authConfig.roles[0]?.name || 'user'}',
+      isActive: true,
+      emailVerified: false,
+    });
+
+    // Generate tokens
+    const token = this.generateAccessToken(user);
+    const refreshToken = this.generateRefreshToken(user);
+
+    return {
+      token,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+    };
+  }
+
+  async login(credentials: LoginRequest): Promise<LoginResponse> {
+    // Find user by email
+    const user = await this.userRepository.findByEmail(credentials.email);
+    if (!user) {
+      throw new Error('Invalid credentials');
+    }
+
+    // Check if user is active
+    if (!user.isActive) {
+      throw new Error('Account is deactivated');
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(credentials.password, user.password);
+    if (!isPasswordValid) {
+      throw new Error('Invalid credentials');
+    }
+
+    // Update last login
+    await this.userRepository.updateLastLogin(user.id);
+
+    // Generate tokens
+    const token = this.generateAccessToken(user);
+    const refreshToken = this.generateRefreshToken(user);
+
+    return {
+      token,
+      refreshToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+    };
+  }
+
+  async refreshToken(refreshToken: string): Promise<{ token: string; refreshToken: string }> {
+    try {
+      const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as any;
+      const user = await this.userRepository.findById(decoded.userId);
+      
+      if (!user || !user.isActive) {
+        throw new Error('Invalid refresh token');
+      }
+
+      const newToken = this.generateAccessToken(user);
+      const newRefreshToken = this.generateRefreshToken(user);
+
+      return {
+        token: newToken,
+        refreshToken: newRefreshToken,
+      };
+    } catch (error) {
+      throw new Error('Invalid refresh token');
+    }
+  }
+
+  async getUserProfile(userId: string): Promise<UserProfile> {
+    const user = await this.userRepository.findById(userId);
+    if (!user) {
+      throw new Error('User not found');
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      isActive: user.isActive,
+      emailVerified: user.emailVerified,
+      lastLoginAt: user.lastLoginAt,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+  }
+
+  private generateAccessToken(user: User): string {
+    return jwt.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.role,
+      },
+      process.env.JWT_SECRET!,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '15m' }
+    );
+  }
+
+  private generateRefreshToken(user: User): string {
+    return jwt.sign(
+      {
+        userId: user.id,
+      },
+      process.env.JWT_REFRESH_SECRET!,
+      { expiresIn: '7d' }
+    );
+  }
+}
+`;
+  }
+
+  private generateAuthController(authConfig: AuthConfig): string {
+    return `import { Request, Response, NextFunction } from 'express';
+import { AuthService } from '../services/AuthService';
+import { CreateUserRequest, LoginRequest, RefreshTokenRequest } from '../models/User';
+
+export class AuthController {
+  private authService: AuthService;
+
+  constructor() {
+    this.authService = new AuthService();
+  }
+
+  register = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userData: CreateUserRequest = req.body;
+      const result = await this.authService.register(userData);
+      
+      res.status(201).json({
+        success: true,
+        message: 'User registered successfully',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  login = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const credentials: LoginRequest = req.body;
+      const result = await this.authService.login(credentials);
+      
+      res.json({
+        success: true,
+        message: 'Login successful',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  refreshToken = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { refreshToken }: RefreshTokenRequest = req.body;
+      const result = await this.authService.refreshToken(refreshToken);
+      
+      res.json({
+        success: true,
+        message: 'Token refreshed successfully',
+        data: result,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  logout = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      // In a real implementation, you might want to blacklist the token
+      // For now, we'll just return success
+      res.json({
+        success: true,
+        message: 'Logout successful',
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  getProfile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = (req as any).user.userId;
+      const profile = await this.authService.getUserProfile(userId);
+      
+      res.json({
+        success: true,
+        data: profile,
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+`;
+  }
+
+  private generateAuthMiddleware(authConfig: AuthConfig): string {
+    if (authConfig.type === 'jwt') {
+      return `import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+
+export interface AuthenticatedRequest extends Request {
+  user: {
+    userId: string;
+    email: string;
+    role: string;
+  };
+}
+
+export const authenticateToken = (req: Request, res: Response, next: NextFunction): void => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (!token) {
+    res.status(401).json({
+      success: false,
+      message: 'Access token required',
+    });
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+    (req as AuthenticatedRequest).user = decoded;
+    next();
+  } catch (error) {
+    res.status(403).json({
+      success: false,
+      message: 'Invalid or expired token',
+    });
+  }
+};
+
+export const optionalAuth = (req: Request, res: Response, next: NextFunction): void => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
+      (req as AuthenticatedRequest).user = decoded;
+    } catch (error) {
+      // Token is invalid, but we continue without authentication
+    }
+  }
+
+  next();
+};
+`;
+    }
+
+    return `// Authentication middleware placeholder for ${authConfig.type}
+export const authenticateToken = (req: any, res: any, next: any) => {
+  next();
+};
+`;
+  }
+
+  private generateAuthorizationMiddleware(authConfig: AuthConfig): string {
+    const rolesList = authConfig.roles
+      .map((role) => `'${role.name}'`)
+      .join(', ');
+
+    return `import { Request, Response, NextFunction } from 'express';
+import { AuthenticatedRequest } from './auth';
+
+export const authorize = (...roles: string[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const user = (req as AuthenticatedRequest).user;
+
+    if (!user) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    if (roles.length > 0 && !roles.includes(user.role)) {
+      res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions',
+      });
+      return;
+    }
+
+    next();
+  };
+};
+
+// Predefined role-based middleware
+${authConfig.roles
+  .map(
+    (role) => `
+export const require${role.name.charAt(0).toUpperCase() + role.name.slice(1)} = authorize('${role.name}');`
+  )
+  .join('')}
+
+// Check if user has any of the specified permissions
+export const hasPermission = (...permissions: string[]) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const user = (req as AuthenticatedRequest).user;
+
+    if (!user) {
+      res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+      return;
+    }
+
+    // Find user's role and check permissions
+    const userRole = ${JSON.stringify(authConfig.roles)}.find(role => role.name === user.role);
+    
+    if (!userRole) {
+      res.status(403).json({
+        success: false,
+        message: 'Invalid user role',
+      });
+      return;
+    }
+
+    const hasRequiredPermission = permissions.some(permission => 
+      userRole.permissions.includes(permission)
+    );
+
+    if (!hasRequiredPermission) {
+      res.status(403).json({
+        success: false,
+        message: 'Insufficient permissions',
+      });
+      return;
+    }
+
+    next();
+  };
+};
+`;
+  }
+
+  private generateUserRepository(authConfig: AuthConfig): string {
+    return `import { query } from '../database/connection';
+import { User, CreateUserRequest } from '../models/User';
+
+export class UserRepository {
+  private tableName = 'users';
+
+  async create(userData: CreateUserRequest & { 
+    password: string; 
+    isActive: boolean; 
+    emailVerified: boolean; 
+  }): Promise<User> {
+    const fields = Object.keys(userData).join(', ');
+    const values = Object.values(userData);
+    const placeholders = values.map((_, index) => \`$\${index + 1}\`).join(', ');
+    
+    const query_text = \`
+      INSERT INTO \${this.tableName} (\${fields})
+      VALUES (\${placeholders})
+      RETURNING *
+    \`;
+    
+    const result = await query(query_text, values);
+    return this.mapRowToUser(result.rows[0]);
+  }
+
+  async findById(id: string): Promise<User | null> {
+    const result = await query(
+      \`SELECT * FROM \${this.tableName} WHERE id = $1\`,
+      [id]
+    );
+    
+    return result.rows.length > 0 ? this.mapRowToUser(result.rows[0]) : null;
+  }
+
+  async findByEmail(email: string): Promise<User | null> {
+    const result = await query(
+      \`SELECT * FROM \${this.tableName} WHERE email = $1\`,
+      [email]
+    );
+    
+    return result.rows.length > 0 ? this.mapRowToUser(result.rows[0]) : null;
+  }
+
+  async updateLastLogin(id: string): Promise<void> {
+    await query(
+      \`UPDATE \${this.tableName} SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1\`,
+      [id]
+    );
+  }
+
+  async updateUser(id: string, updates: Partial<User>): Promise<User | null> {
+    const fields = Object.keys(updates);
+    const values = Object.values(updates);
+    const setClause = fields.map((field, index) => \`\${field} = $\${index + 2}\`).join(', ');
+    
+    const query_text = \`
+      UPDATE \${this.tableName}
+      SET \${setClause}, updated_at = NOW()
+      WHERE id = $1
+      RETURNING *
+    \`;
+    
+    const result = await query(query_text, [id, ...values]);
+    return result.rows.length > 0 ? this.mapRowToUser(result.rows[0]) : null;
+  }
+
+  async deactivateUser(id: string): Promise<void> {
+    await query(
+      \`UPDATE \${this.tableName} SET is_active = false, updated_at = NOW() WHERE id = $1\`,
+      [id]
+    );
+  }
+
+  private mapRowToUser(row: any): User {
+    return {
+      id: row.id,
+      email: row.email,
+      password: row.password,
+      name: row.name,
+      role: row.role,
+      isActive: row.is_active,
+      emailVerified: row.email_verified,
+      lastLoginAt: row.last_login_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+}
+`;
+  }
+
+  private generateAuthValidation(authConfig: AuthConfig): string {
+    const roles = authConfig.roles.map((role) => `'${role.name}'`).join(', ');
+
+    return `import { body, validationResult } from 'express-validator';
+import { Request, Response, NextFunction } from 'express';
+
+const handleValidationErrors = (req: Request, res: Response, next: NextFunction) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: 'Validation failed',
+      errors: errors.array().map(error => ({
+        field: error.type === 'field' ? (error as any).path : 'unknown',
+        message: error.msg,
+        value: error.type === 'field' ? (error as any).value : undefined
+      }))
+    });
+  }
+  next();
+};
+
+export const validateRegister = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email address'),
+  body('password')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters long')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]/)
+    .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character'),
+  body('name')
+    .trim()
+    .isLength({ min: 2, max: 50 })
+    .withMessage('Name must be between 2 and 50 characters'),
+  body('role')
+    .optional()
+    .isIn([${roles}])
+    .withMessage(\`Role must be one of: \${[${roles}].join(', ')}\`),
+  handleValidationErrors
+];
+
+export const validateLogin = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Please provide a valid email address'),
+  body('password')
+    .notEmpty()
+    .withMessage('Password is required'),
+  handleValidationErrors
+];
+
+export const validateRefreshToken = [
+  body('refreshToken')
+    .notEmpty()
+    .withMessage('Refresh token is required'),
+  handleValidationErrors
+];
+`;
+  }
+
+  private generateUserSchema(authConfig: AuthConfig): string {
+    const roles = authConfig.roles.map((role) => `'${role.name}'`).join(', ');
+    const roleConstraint = roles ? `CHECK (role IN (${roles}))` : '';
+
+    return `CREATE TABLE users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  role VARCHAR(50) NOT NULL DEFAULT '${authConfig.roles[0]?.name || 'user'}' ${roleConstraint},
+  is_active BOOLEAN DEFAULT true,
+  email_verified BOOLEAN DEFAULT false,
+  last_login_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Create indexes for better performance
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_role ON users(role);
+CREATE INDEX idx_users_active ON users(is_active);
+
+-- Create updated_at trigger
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$ language 'plpgsql';
+
+CREATE TRIGGER update_users_updated_at
+  BEFORE UPDATE ON users
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- Insert default admin user (password: Admin123!)
+INSERT INTO users (email, password, name, role, is_active, email_verified)
+VALUES (
+  'admin@example.com',
+  '$2a$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/LewdBPj6hsxq/3/Hm', -- Admin123!
+  'System Administrator',
+  '${authConfig.roles.find((r) => r.name === 'admin')?.name || authConfig.roles[0]?.name || 'admin'}',
+  true,
+  true
+);
+`;
+  }
+
+  private generateAuthRoutes(authConfig: AuthConfig): string {
+    return `import { Router } from 'express';
+import { AuthController } from '../controllers/AuthController';
+import { authenticateToken } from '../middleware/auth';
+import { validateRegister, validateLogin, validateRefreshToken } from '../validation/AuthValidation';
+
+const router = Router();
+const authController = new AuthController();
+
+// Public routes
+router.post('/register', validateRegister, authController.register);
+router.post('/login', validateLogin, authController.login);
+router.post('/refresh', validateRefreshToken, authController.refreshToken);
+
+// Protected routes
+router.post('/logout', authenticateToken, authController.logout);
+router.get('/profile', authenticateToken, authController.getProfile);
+
+export default router;
 `;
   }
 

@@ -133,7 +133,7 @@ describe('Code Generation Integration', () => {
     expect(project.id).toBeDefined();
     expect(project.name).toMatch(/^generated-api-\d+$/);
     expect(project.models).toHaveLength(2);
-    expect(project.endpoints).toHaveLength(10); // 5 endpoints per model
+    expect(project.endpoints).toHaveLength(15); // 5 endpoints per model + 5 auth endpoints
     expect(project.files.length).toBeGreaterThan(20); // Should have many files
 
     // Verify essential files exist
