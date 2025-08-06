@@ -33,6 +33,12 @@ export interface MiddlewareModule {
 }
 
 export class CodeGenerationService {
+  private openApiGenerator: OpenAPIGenerator;
+
+  constructor() {
+    this.openApiGenerator = new OpenAPIGenerator();
+  }
+
   /**
    * Generate a complete project from models and options
    */
@@ -103,14 +109,24 @@ export class CodeGenerationService {
     const appFile = await this.generateMainApp(models, options);
     files.push(appFile);
 
-    return {
-      id: projectId,
-      name: projectName,
-      models,
-      endpoints,
-      authConfig,
-      files,
-      openAPISpec: {
+    // Generate OpenAPI documentation if enabled
+    let openAPISpec;
+    if (options.includeDocumentation) {
+      const documentationFiles =
+        await this.openApiGenerator.generateDocumentationFiles(
+          models,
+          endpoints,
+          authConfig
+        );
+      files.push(...documentationFiles);
+
+      // Generate the OpenAPI spec for the project metadata
+      openAPISpec = await this.openApiGenerator[
+        'documentationService'
+      ].generateOpenAPISpec(models, endpoints, authConfig);
+    } else {
+      // Provide a minimal spec if documentation is disabled
+      openAPISpec = {
         openapi: '3.0.0',
         info: {
           title: projectName,
@@ -122,7 +138,17 @@ export class CodeGenerationService {
           schemas: {},
           securitySchemes: {},
         },
-      },
+      };
+    }
+
+    return {
+      id: projectId,
+      name: projectName,
+      models,
+      endpoints,
+      authConfig,
+      files,
+      openAPISpec,
       generationOptions: options,
       createdAt: new Date(),
       updatedAt: new Date(),
