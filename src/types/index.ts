@@ -8,3 +8,6 @@ export * from './configuration';
 
 // Parsing and validation types
 export * from './parsing';
+
+// Project and session types
+export * from './project';
