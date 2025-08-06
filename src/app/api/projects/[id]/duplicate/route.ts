@@ -3,15 +3,16 @@ import { ProjectService } from '../../../../../services/projectService';
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
     const newName = body.name;
 
     const projectService = ProjectService.getInstance();
     const duplicatedProject = await projectService.duplicateProject(
-      params.id,
+      id,
       newName
     );
 

@@ -55,9 +55,18 @@ export function Layout({ children }: LayoutProps) {
 
   useEffect(() => {
     // Load current project from session storage
-    const projectId = sessionStorage.getItem('currentProjectId');
-    if (projectId) {
-      setCurrentProject(projectId);
+    try {
+      if (typeof window !== 'undefined') {
+        const projectId = sessionStorage.getItem('currentProjectId');
+        if (projectId) {
+          setCurrentProject(projectId);
+        }
+      }
+    } catch (error) {
+      console.warn(
+        'Failed to load current project from session storage:',
+        error
+      );
     }
   }, []);
 

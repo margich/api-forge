@@ -4,11 +4,12 @@ import { UpdateProjectInput } from '../../../../types';
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const projectService = ProjectService.getInstance();
-    const project = await projectService.getProject(params.id);
+    const project = await projectService.getProject(id);
 
     if (!project) {
       return NextResponse.json(
@@ -38,9 +39,10 @@ export async function GET(
 
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const body = await request.json();
 
     const updates: UpdateProjectInput = {
@@ -53,10 +55,7 @@ export async function PUT(
     };
 
     const projectService = ProjectService.getInstance();
-    const updatedProject = await projectService.updateProject(
-      params.id,
-      updates
-    );
+    const updatedProject = await projectService.updateProject(id, updates);
 
     if (!updatedProject) {
       return NextResponse.json(
@@ -86,11 +85,12 @@ export async function PUT(
 
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;
     const projectService = ProjectService.getInstance();
-    const success = await projectService.deleteProject(params.id);
+    const success = await projectService.deleteProject(id);
 
     if (!success) {
       return NextResponse.json(

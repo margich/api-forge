@@ -12,6 +12,7 @@ interface PromptInputProps {
     }
   ) => void;
   loading?: boolean;
+  placeholder?: string;
   className?: string;
 }
 
@@ -30,6 +31,7 @@ export default function PromptInput({
   onSubmit,
   onParsingComplete,
   loading = false,
+  placeholder = "Describe your application... For example: 'I need a blog API with users who can create posts and comments. Users should have profiles with names and emails. Posts should have titles, content, and publication dates. Comments should be linked to posts and users.'",
   className = '',
 }: PromptInputProps) {
   const [prompt, setPrompt] = useState('');
@@ -163,7 +165,7 @@ export default function PromptInput({
           <textarea
             value={prompt}
             onChange={(e) => handleInputChange(e.target.value)}
-            placeholder="Describe your application... For example: 'I need a blog API with users who can create posts and comments. Users should have profiles with names and emails. Posts should have titles, content, and publication dates. Comments should be linked to posts and users.'"
+            placeholder={placeholder}
             className={`w-full min-h-[200px] p-4 border rounded-lg resize-y focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-colors ${
               validationErrors.length > 0
                 ? 'border-red-500 focus:ring-red-500'

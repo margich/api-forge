@@ -306,7 +306,7 @@ export default function APIPreviewPage() {
             </div>
           </div>
         ) : (
-          <APIPreview apiSpec={apiSpec} models={project.models} />
+          <APIPreview openAPISpec={apiSpec} models={project.models} />
         )}
       </div>
 
