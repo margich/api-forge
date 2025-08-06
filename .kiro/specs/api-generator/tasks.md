@@ -89,7 +89,7 @@
   - Write integration tests for project export and file generation
   - _Requirements: 6.1, 6.2, 6.4, 6.5_
 
-- [ ] 13. Add cloud deployment integration
+- [x] 13. Add cloud deployment integration
   - Implement deployment service integration with popular cloud platforms
   - Create deployment configuration generation for different environments
   - Build deployment status tracking and feedback system
