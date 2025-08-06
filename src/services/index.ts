@@ -10,3 +10,6 @@ export * from './modelValidationService';
 export * from './codeFormatter';
 export * from './codeGenerationService';
 export * from './templateEngine';
+
+// Project export service
+export * from './projectExportService';

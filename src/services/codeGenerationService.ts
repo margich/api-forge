@@ -7,6 +7,7 @@ import {
   GenerationOptions,
   Model,
 } from '../types';
+import { OpenAPIGenerator } from './openApiGenerator';
 
 export interface CRUDEndpoints {
   create: Endpoint;
