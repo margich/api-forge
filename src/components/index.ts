@@ -1,4 +1,5 @@
 // Export all components from this directory
+export { default as APIPreview } from './APIPreview';
 export { default as FieldEditor } from './FieldEditor';
 export { default as FieldRow } from './FieldRow';
 export { default as ModelCanvas } from './ModelCanvas';
